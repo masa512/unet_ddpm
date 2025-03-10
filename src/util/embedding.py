@@ -15,21 +15,21 @@ def pos_encoder(Tmax,emb_dim):
     """
 
     # Initialize Zero Tensor
-    t_emb = torch.zeros(size=(emb_dim,Tmax))
+    t_emb = torch.zeros(size=(Tmax,emb_dim))
 
     # Position/Time vector/tensor (one underscore before)
-    _t = torch.arange(0,Tmax).unsqueeze(0)
+    _t = torch.arange(0,Tmax).unsqueeze(-1)
     t = _t.repeat(1,emb_dim)
 
     # Embedding dim vector/tensor
-    _k = torch.arange(0,emb_dim).unsqueeze(-1)
+    _k = torch.arange(0,emb_dim).unsqueeze(0)
     k = _k.repeat(Tmax,1)
 
     # Even indices of position - sin(t * 10000 ** (-2*i/emb_dim))
     # Odd indices of position - cos(t * 10000 ** (-2*i/emb_dim))
     term = torch.exp(torch.log(t) - 2*k/emb_dim * math.log(10000))
-    t_emb[::2,:] = torch.sin(term[::2,:])
-    t_emb[1::2,:] = torch.cos(term[1::2,:])
+    t_emb[:,::2] = torch.sin(term[:,::2])
+    t_emb[:,1::2] = torch.cos(term[:,1::2])
 
     return t_emb.unsqueeze(0)
 
