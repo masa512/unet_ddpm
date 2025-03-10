@@ -70,5 +70,5 @@ class time_embedding(nn.Module):
         # Step 2 : Pass the output to NN
         embedding = self.t_emb_layer(sinu_embedding)
 
-        return embeddingß
+        return embedding
 

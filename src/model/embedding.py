@@ -31,6 +31,5 @@ def pos_encoder(Tmax,emb_dim):
     t_emb[:,::2] = torch.sin(term[:,::2])
     t_emb[:,1::2] = torch.cos(term[:,1::2])
 
-    return t_emb.unsqueeze(0)
-
+    return t_emb
 
