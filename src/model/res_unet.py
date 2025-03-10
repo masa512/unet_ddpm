@@ -47,7 +47,7 @@ class time_embedding(nn.Module):
     """
     Includes 1)Sinusoidal Encoding & 2)NN processing
     """
-    def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLu):
+    def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLU):
 
         super().__init__()
         self.Tmax = Tmax
