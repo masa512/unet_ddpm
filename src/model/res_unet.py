@@ -3,8 +3,10 @@ Resnet - variation of Unet
 Current version without context embedding
 """
 import torch
+from torch.autograd import forward_ad
 import torch.nn as nn
 import torch.nn.functional as F
+from .embedding import pos_encoder
 
 
 class norm_act_conv(nn.Module):
@@ -40,13 +42,33 @@ class norm_act_conv(nn.Module):
     def forward(self,x):
 
         return self.conv(self.activation(self.normalize(x)))
-          
-        
 
+class time_embedding(nn.Module):
+    """
+    Includes 1)Sinusoidal Encoding & 2)NN processing
+    """
+    def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLu):
 
+        super().__init__()
+        self.Tmax = Tmax
+        self.sinu_emb_dim = sinu_emb_dim
+        self.sinu_emb = pos_encoder(Tmax,sinu_emb_dim)
+        self.t_emb_layer = nn.Sequential(
+            activation(),
+            nn.Linear(
+                in_features=sinu_emb_dim,
+                out_channels =  out_channels)
+        )
+    
+    def forward(self,_t):
 
-class res_block(nn.Module):
+        ### We'll expect a time tensor [0,Tmax) of size (batch,1)
 
-    def __init__(self,in_channel,out_channel,activation,normalization):
+        # Step 1 : Extract the embeddings for each batch
+        sinu_embedding = torch.index_select(self.sinu_emb,dim=0,index=_t)
 
-        return None
+        # Step 2 : Pass the output to NN
+        embedding = self.t_emb_layer(sinu_embedding)
+
+        return embedding
+
