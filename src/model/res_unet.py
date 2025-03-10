@@ -12,7 +12,7 @@ from .embedding import pos_encoder
 class norm_act_conv(nn.Module):
 
     def __init__(self,in_channels,out_channels,kernel_size,activation=nn.SiLU, normalization=nn.GroupNorm, norm_kwargs = {}):
-        super().__init__()
+        super(norm_act_conv,self).__init__()
         self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
