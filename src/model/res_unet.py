@@ -49,7 +49,7 @@ class time_embedding(nn.Module):
     """
     def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLU):
 
-        super().__init__()
+        super(time_embedding,self).__init__()
         self.Tmax = Tmax
         self.sinu_emb_dim = sinu_emb_dim
         self.sinu_emb = pos_encoder(Tmax,sinu_emb_dim)
