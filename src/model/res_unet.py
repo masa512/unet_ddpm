@@ -362,3 +362,87 @@ class output_layer(nn.Module):
     def forward(self,x):
         return self.final_layer(self.nac(x))
 
+class res_unet(nn.Module):
+
+    def __init__(
+        self,
+        input_channels,
+        base_channels,
+        output_channels,
+        kernel_size,
+        depth,
+        sinu_emb_dim,
+        Tmax, 
+        residual_layer = True, 
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        pool = nn.AvgPool2d,
+        upsample_conv = nn.ConvTranspose2d,
+        norm_kwargs = {}
+        ):
+
+        self.input_layer = input_layer(
+          input_channels = input_channels,
+          base_channels = base_channels,
+          kernel_size = kernel_size
+        )
+        
+        self.encoder = res_encoder(
+            base_channels = base_channels,
+            kernel_size = kernel_size,
+            depth = depth,
+            sinu_emb_dim = sinu_emb_dim,
+            Tmax = Tmax, 
+            residual_layer = residual_layer, 
+            activation= activation, 
+            normalization=normalization,
+            pool = pool,
+            norm_kwargs = norm_kwargs
+        )
+
+        self.bottle_neck = res_bottle(
+            base_channels = base_channels,
+            kernel_size = kernel_size,
+            depth = depth,
+            sinu_emb_dim = sinu_emb_dim,
+            Tmax = Tmax, 
+            residual_layer = residual_layer, 
+            activation=activation, 
+            normalization=normalization,
+            norm_kwargs = norm_kwargs
+        )
+
+        self.decoder = res_decoder(
+            base_channels = base_channels,
+            kernel_size = kernel_size,
+            depth = depth,
+            sinu_emb_dim = sinu_emb_dim,
+            Tmax = Tmax, 
+            residual_layer = residual_layer, 
+            activation=activation, 
+            normalization=normalization,
+            upsample_conv = upsample_conv,
+            norm_kwargs = norm_kwargs
+        )
+
+        self.output_layer = output_layer(
+            base_channels = base_channels,
+            output_channels = output_channels,
+            kernel_size = kernel_size,
+            activation=activation, 
+            normalization=normalization,
+            norm_kwargs = norm_kwargs
+        )
+
+    def forward(self,x,_t):
+
+        x = self.input_layer(x)
+        x,res = self.encoder(x,_t)
+        x = self.bottle_neck(x,_t)
+        x = self.decoder(x,_t,res)
+        x = self.output_layer(x)
+
+        return x
+
+    
+
