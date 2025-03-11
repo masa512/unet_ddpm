@@ -380,6 +380,7 @@ class res_unet(nn.Module):
         upsample_conv = nn.ConvTranspose2d,
         norm_kwargs = {}
         ):
+        super().__init__()
 
         self.input_layer = input_layer(
           input_channels = input_channels,
