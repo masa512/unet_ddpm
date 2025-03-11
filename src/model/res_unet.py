@@ -13,7 +13,16 @@ from .embedding import pos_encoder
 
 class norm_act_conv(nn.Module):
 
-    def __init__(self,in_channels,out_channels,kernel_size,activation=nn.SiLU, normalization=nn.GroupNorm, norm_kwargs = {}):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm, 
+        norm_kwargs = {}
+        ):
+
         super(norm_act_conv,self).__init__()
         self.conv = nn.Conv2d(
             in_channels=in_channels,
@@ -48,6 +57,7 @@ class norm_act_conv(nn.Module):
 class time_embedding(nn.Module):
     """
     Includes 1)Sinusoidal Encoding & 2)NN processing
+
     """
     def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLU):
 
@@ -84,9 +94,9 @@ class resnet_block(nn.Module):
         self,
         in_channels,
         out_channels,
+        kernel_size,
         sinu_emb_dim,
         Tmax, 
-        kernel_size, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -131,18 +141,58 @@ class resnet_block(nn.Module):
         return x
 
 class res_encoder(nn.Module):
-
+    """
+    Full U-Net Encoder Layer
+    Depth excludes the input layer (same goes for decoder regarding the output layer)
+    """
     def __init__(
         self,
-        in_channels,
-        out_channels,
+        base_channels,
+        kernel_size,
+        depth,
         sinu_emb_dim,
         Tmax, 
-        kernel_size, 
-        depth,
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
-        norm_kwargs = {}):
+        pool = nn.AvgPool2d,
+        norm_kwargs = {}
+        ):
 
-        self.enc = 1
+        self.enc_seq = nn.ModuleList()
+
+        for i in range(1,depth+1):
+
+            # Append Sequence of 1) Res Block 2) Pool (either avg or max)
+            self.enc_seq.append(nn.Sequential(
+                resnet_block(
+                    in_channels = base_channels * 2**(i-1),
+                    out_channels = base_channels * 2**(i),
+                    kernel_size = kernel_size,
+                    sinu_emb_dim = sinu_emb_dim,
+                    Tmax = Tmax, 
+                    residual_layer = residual_layer, 
+                    activation=activation, 
+                    normalization= normalization,
+                    norm_kwargs = norm_kwargs
+                )
+            ))
+        
+        self.pool = pool(2,2)
+
+    def forward(self,x,_t):
+
+        # Initialize skip connection
+        res = {}
+
+        # each encoder block
+        for i, e in enumerate(self.enc_seq):
+            # First apply the conv layer
+            r = e(x,_t)
+            res[i+1] = r
+            # Apply pool
+            x = self.pool(r)
+        
+        return x,res
+
+
