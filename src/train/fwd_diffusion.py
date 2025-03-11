@@ -21,7 +21,7 @@ class forward_diffusion():
             "alpha_bar" : alpha_bar
         }
     
-    def get_param(self,_t):
+    def get_params(self,_t):
         """
         _t (Batch,1)
         """
@@ -30,13 +30,13 @@ class forward_diffusion():
         }
         return params
     
-    def forward(self,x_0,_t):
+    def diffuse(self,x_0,_t):
 
         # White noise (same as x : N,Nc,W,L)
         noise = torch.randn_like(x_0)
 
         # Retrive the params as needed (each param is of batch x 1)
-        params = self.get_param(_t)
+        params = self.get_params(_t)
         alpha_bar = params['alpha_bar'].view(-1,1,1,1)
 
         # Apply transformation as needed
