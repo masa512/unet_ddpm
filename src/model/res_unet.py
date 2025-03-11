@@ -195,5 +195,3 @@ class res_encoder(nn.Module):
         
         return x,res
 
-class res_decoder(nn.Module):
-    
