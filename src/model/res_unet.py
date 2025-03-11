@@ -162,13 +162,13 @@ class res_encoder(nn.Module):
 
         self.enc_seq = nn.ModuleList()
 
-        for i in range(1,depth+1):
+        for i in range(depth):
 
             # Append Sequence of 1) Res Block 2) Pool (either avg or max)
             self.enc_seq.append(
                 resnet_block(
-                    in_channels = base_channels * 2**(i-1),
-                    out_channels = base_channels * 2**(i),
+                    in_channels = base_channels * 2**(i),
+                    out_channels = base_channels * 2**(i+1),
                     kernel_size = kernel_size,
                     sinu_emb_dim = sinu_emb_dim,
                     Tmax = Tmax, 
@@ -194,4 +194,171 @@ class res_encoder(nn.Module):
             x = self.pool(r)
         
         return x,res
+
+class res_decoder(nn.Module):
+
+    def __init__(
+        self,
+        base_channels,
+        kernel_size,
+        depth,
+        sinu_emb_dim,
+        Tmax, 
+        residual_layer = True, 
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        upsample_conv = nn.ConvTranspose2d,
+        norm_kwargs = {}
+        ):
+
+        super().__init__()
+
+        self.dec_seq = nn.ModuleList()
+        self.upsample = nn.ModuleList()
+
+        for i in reversed(range(1,depth+1)):
+
+            self.dec_seq.append(
+                resnet_block(
+                    in_channels = base_channels * 2**(i+1),
+                    out_channels = base_channels * 2**(i),
+                    kernel_size = kernel_size,
+                    sinu_emb_dim = sinu_emb_dim,
+                    Tmax = Tmax, 
+                    residual_layer = residual_layer, 
+                    activation=activation, 
+                    normalization= normalization,
+                    norm_kwargs = norm_kwargs
+                )
+            )
+
+            self.upsample.append(
+                upsample_conv(
+                    in_channels=base_channels * (2**(i+1)),
+                    out_channels=base_channels * (2**(i)),
+                    kernel_size=2,
+                    stride = 2
+                )
+            )
+        
+
+    def forward(self,x,_t,res):
+
+        for d,u,r in zip(self.dec_seq,self.upsample,reversed(res.values())):
+
+            # Upsample first
+            x_u = u(x)
+            # Cat the residual
+            x_c = torch.cat((x_u,r), dim=1)
+            # Conv layer
+            x = d(x_c,_t)
+
+        return x
+
+
+class res_bottle(nn.Module):
+
+    def __init__(
+        self,
+        base_channels,
+        kernel_size,
+        depth,
+        sinu_emb_dim,
+        Tmax, 
+        residual_layer = True, 
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        norm_kwargs = {}
+        ):
+
+        super().__init__()
+
+        # Two unique time embedding layers already absorbed in the res layer defined
+        self.res_block1 = resnet_block(
+                    in_channels = base_channels * (2**depth),
+                    out_channels = base_channels * (2**(depth+1)),
+                    kernel_size = kernel_size,
+                    sinu_emb_dim = sinu_emb_dim,
+                    Tmax = Tmax, 
+                    residual_layer = residual_layer, 
+                    activation=activation, 
+                    normalization= normalization,
+                    norm_kwargs = norm_kwargs
+                    )
+        self.res_block2 = resnet_block(
+                    in_channels = base_channels * (2**(depth+1)),
+                    out_channels = base_channels * (2**(depth+1)),
+                    kernel_size = kernel_size,
+                    sinu_emb_dim = sinu_emb_dim,
+                    Tmax = Tmax, 
+                    residual_layer = residual_layer, 
+                    activation=activation, 
+                    normalization= normalization,
+                    norm_kwargs = norm_kwargs
+                    )
+
+    def forward(self,x,_t):
+
+        x = self.res_block1(x,_t)
+        x = self.res_block2(x,_t)
+
+        return x
+
+class input_layer(nn.Module):
+
+    def __init__(
+        self,
+        input_channels,
+        base_channels,
+        kernel_size
+        ):
+
+        super().__init__()
+
+        self.layer = nn.Conv2d(
+            in_channels=input_channels,
+            out_channels=base_channels,
+            kernel_size=kernel_size,
+            stride = 1,
+            padding = (kernel_size-1)//2
+        )
+    
+    def forward(self,x):
+
+        return self.layer(x)
+
+
+class output_layer(nn.Module):
+
+    def __init__(
+        self,
+        base_channels,
+        output_channels,
+        kernel_size,
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        norm_kwargs = {}
+        ):
+
+        super().__init__()
+
+        self.nac = norm_act_conv(
+          in_channels = base_channels * 2,
+          out_channels = base_channels,
+          kernel_size = kernel_size,
+          activation=activation, 
+          normalization=normalization, 
+          norm_kwargs = norm_kwargs
+        )
+
+        self.final_layer = nn.Conv2d(
+            in_channels=base_channels,
+            out_channels=output_channels,
+            kernel_size=kernel_size,
+            stride = 1,
+            padding = (kernel_size-1)//2
+        )
+    
+    def forward(self,x):
+        return self.final_layer(self.nac(x))
 
