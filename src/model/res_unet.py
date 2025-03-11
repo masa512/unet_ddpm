@@ -1,6 +1,8 @@
 """
 Resnet - variation of Unet
 Current version without context embedding
+Inspiration from https://matthewmacfarquhar.medium.com/de-noising-diffusion-probabalistic-models-21f9adf586b0
+
 """
 import torch
 from torch.autograd import forward_ad
@@ -65,10 +67,82 @@ class time_embedding(nn.Module):
         ### We'll expect a time tensor [0,Tmax) of size (batch,1)
 
         # Step 1 : Extract the embeddings for each batch
-        sinu_embedding = torch.index_select(self.sinu_emb,dim=0,index=_t)
+        sinu_embedding = torch.index_select(self.sinu_emb,dim=0,index=_t.squeeze())
 
         # Step 2 : Pass the output to NN
         embedding = self.t_emb_layer(sinu_embedding)
 
         return embedding
 
+class resnet_block(nn.Module):
+
+    """
+    Equivlent to double_conv in Unet
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        sinu_emb_dim,
+        Tmax, 
+        kernel_size, 
+        residual_layer = True, 
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        norm_kwargs = {}):
+
+        super().__init__()
+        
+        # Define residual layer
+        self.residual_layer  = nn.Identity()
+        if residual_layer:
+            self.residual_layer = nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=1)
+
+        # Define the two norm_act_conv layers 
+        self.nac1 = norm_act_conv(in_channels,out_channels,kernel_size,activation, normalization, norm_kwargs = {})
+        self.nac2 = norm_act_conv(out_channels,out_channels,kernel_size,activation, normalization, norm_kwargs = {})
+        
+        # Define the time embedding layer
+        self.t_emb = time_embedding(sinu_emb_dim,out_channels,Tmax,activation)
+
+    
+    def forward(self,x,_t):
+
+        # Step 1 : Pass input through first nac and residual
+        res,x = self.residual_layer(x),self.nac1(x)
+
+        # Step 2 : Add the first time embedding to x
+
+        t_vector = self.t_emb(_t)
+        # Make addable to the image features (W,L)
+        t_resized = t_vector.unsqueeze(-1).unsqueeze(-1)
+
+        x =  t_resized + x
+
+        # Step 3 : Apply the last nac
+        x = self.nac2(x)
+
+        # Step 4 : Add residual connection to x and return
+        x = x + res
+        return x
+
+class res_encoder(nn.Module):
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        sinu_emb_dim,
+        Tmax, 
+        kernel_size, 
+        depth,
+        residual_layer = True, 
+        activation=nn.SiLU, 
+        normalization=nn.GroupNorm,
+        norm_kwargs = {}):
+
+        self.enc = 1
