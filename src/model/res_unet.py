@@ -158,6 +158,7 @@ class res_encoder(nn.Module):
         pool = nn.AvgPool2d,
         norm_kwargs = {}
         ):
+        super().__init__()
 
         self.enc_seq = nn.ModuleList()
 
