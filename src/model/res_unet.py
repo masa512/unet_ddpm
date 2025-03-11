@@ -165,7 +165,7 @@ class res_encoder(nn.Module):
         for i in range(1,depth+1):
 
             # Append Sequence of 1) Res Block 2) Pool (either avg or max)
-            self.enc_seq.append(nn.Sequential(
+            self.enc_seq.append(
                 resnet_block(
                     in_channels = base_channels * 2**(i-1),
                     out_channels = base_channels * 2**(i),
@@ -176,8 +176,7 @@ class res_encoder(nn.Module):
                     activation=activation, 
                     normalization= normalization,
                     norm_kwargs = norm_kwargs
-                )
-            ))
+                ))
         
         self.pool = pool(2,2)
 
@@ -196,4 +195,5 @@ class res_encoder(nn.Module):
         
         return x,res
 
-
+class res_decoder(nn.Module):
+    
