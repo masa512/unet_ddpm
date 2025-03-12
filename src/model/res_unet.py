@@ -9,7 +9,7 @@ from torch.autograd import forward_ad
 import torch.nn as nn
 import torch.nn.functional as F
 from .embedding import pos_encoder
-
+from .fwd_diffusion import forward_diffusion
 
 class norm_act_conv(nn.Module):
 
@@ -59,12 +59,10 @@ class time_embedding(nn.Module):
     Includes 1)Sinusoidal Encoding & 2)NN processing
 
     """
-    def __init__(self,sinu_emb_dim ,out_channels,Tmax, activation = nn.SiLU):
+    def __init__(self,sinu_emb_dim ,out_channels, activation = nn.SiLU):
 
         super().__init__()
-        self.Tmax = Tmax
         self.sinu_emb_dim = sinu_emb_dim
-        self.sinu_emb = pos_encoder(Tmax,sinu_emb_dim)
         self.t_emb_layer = nn.Sequential(
             activation(),
             nn.Linear(
@@ -72,15 +70,12 @@ class time_embedding(nn.Module):
                 out_features =  out_channels)
         )
     
-    def forward(self,_t):
+    def forward(self,t_emb):
 
         ### We'll expect a time tensor [0,Tmax) of size (batch,1)
 
-        # Step 1 : Extract the embeddings for each batch
-        sinu_embedding = torch.index_select(self.sinu_emb,dim=0,index=_t.squeeze())
-
         # Step 2 : Pass the output to NN
-        embedding = self.t_emb_layer(sinu_embedding)
+        embedding = self.t_emb_layer(t_emb)
 
         return embedding
 
@@ -96,7 +91,6 @@ class resnet_block(nn.Module):
         out_channels,
         kernel_size,
         sinu_emb_dim,
-        Tmax, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -117,21 +111,19 @@ class resnet_block(nn.Module):
         self.nac2 = norm_act_conv(out_channels,out_channels,kernel_size,activation, normalization, norm_kwargs = {})
         
         # Define the time embedding layer
-        self.t_emb = time_embedding(sinu_emb_dim,out_channels,Tmax,activation)
+        self.t_embedder = time_embedding(sinu_emb_dim,out_channels,activation)
 
     
-    def forward(self,x,_t):
+    def forward(self,x, t_emb):
 
         # Step 1 : Pass input through first nac and residual
         res,x = self.residual_layer(x),self.nac1(x)
 
-        # Step 2 : Add the first time embedding to x
+        # Step 2 : Apply nonlinear embedder to the sinusoidal embedding vector t_emb
+        t_vector = self.t_embedder(t_emb)[:,:,None,None]
 
-        t_vector = self.t_emb(_t)
         # Make addable to the image features (W,L)
-        t_resized = t_vector.unsqueeze(-1).unsqueeze(-1)
-
-        x =  t_resized + x
+        x =  t_vector + x
 
         # Step 3 : Apply the last nac
         x = self.nac2(x)
@@ -151,7 +143,6 @@ class res_encoder(nn.Module):
         kernel_size,
         depth,
         sinu_emb_dim,
-        Tmax, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -171,7 +162,6 @@ class res_encoder(nn.Module):
                     out_channels = base_channels * 2**(i+1),
                     kernel_size = kernel_size,
                     sinu_emb_dim = sinu_emb_dim,
-                    Tmax = Tmax, 
                     residual_layer = residual_layer, 
                     activation=activation, 
                     normalization= normalization,
@@ -180,7 +170,7 @@ class res_encoder(nn.Module):
         
         self.pool = pool(2,2)
 
-    def forward(self,x,_t):
+    def forward(self,x,t_emb):
 
         # Initialize skip connection
         res = {}
@@ -188,7 +178,7 @@ class res_encoder(nn.Module):
         # each encoder block
         for i, e in enumerate(self.enc_seq):
             # First apply the conv layer
-            r = e(x,_t)
+            r = e(x,t_emb)
             res[i+1] = r
             # Apply pool
             x = self.pool(r)
@@ -203,7 +193,6 @@ class res_decoder(nn.Module):
         kernel_size,
         depth,
         sinu_emb_dim,
-        Tmax, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -224,7 +213,6 @@ class res_decoder(nn.Module):
                     out_channels = base_channels * 2**(i),
                     kernel_size = kernel_size,
                     sinu_emb_dim = sinu_emb_dim,
-                    Tmax = Tmax, 
                     residual_layer = residual_layer, 
                     activation=activation, 
                     normalization= normalization,
@@ -242,7 +230,7 @@ class res_decoder(nn.Module):
             )
         
 
-    def forward(self,x,_t,res):
+    def forward(self,x,t_emb,res):
 
         for d,u,r in zip(self.dec_seq,self.upsample,reversed(res.values())):
 
@@ -251,7 +239,7 @@ class res_decoder(nn.Module):
             # Cat the residual
             x_c = torch.cat((x_u,r), dim=1)
             # Conv layer
-            x = d(x_c,_t)
+            x = d(x_c,t_emb)
 
         return x
 
@@ -264,7 +252,6 @@ class res_bottle(nn.Module):
         kernel_size,
         depth,
         sinu_emb_dim,
-        Tmax, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -279,7 +266,6 @@ class res_bottle(nn.Module):
                     out_channels = base_channels * (2**(depth+1)),
                     kernel_size = kernel_size,
                     sinu_emb_dim = sinu_emb_dim,
-                    Tmax = Tmax, 
                     residual_layer = residual_layer, 
                     activation=activation, 
                     normalization= normalization,
@@ -290,17 +276,16 @@ class res_bottle(nn.Module):
                     out_channels = base_channels * (2**(depth+1)),
                     kernel_size = kernel_size,
                     sinu_emb_dim = sinu_emb_dim,
-                    Tmax = Tmax, 
                     residual_layer = residual_layer, 
                     activation=activation, 
                     normalization= normalization,
                     norm_kwargs = norm_kwargs
                     )
 
-    def forward(self,x,_t):
+    def forward(self,x,t_emb):
 
-        x = self.res_block1(x,_t)
-        x = self.res_block2(x,_t)
+        x = self.res_block1(x,t_emb)
+        x = self.res_block2(x,t_emb)
 
         return x
 
@@ -372,7 +357,6 @@ class res_unet(nn.Module):
         kernel_size,
         depth,
         sinu_emb_dim,
-        Tmax, 
         residual_layer = True, 
         activation=nn.SiLU, 
         normalization=nn.GroupNorm,
@@ -393,7 +377,6 @@ class res_unet(nn.Module):
             kernel_size = kernel_size,
             depth = depth,
             sinu_emb_dim = sinu_emb_dim,
-            Tmax = Tmax, 
             residual_layer = residual_layer, 
             activation= activation, 
             normalization=normalization,
@@ -406,7 +389,6 @@ class res_unet(nn.Module):
             kernel_size = kernel_size,
             depth = depth,
             sinu_emb_dim = sinu_emb_dim,
-            Tmax = Tmax, 
             residual_layer = residual_layer, 
             activation=activation, 
             normalization=normalization,
@@ -418,7 +400,6 @@ class res_unet(nn.Module):
             kernel_size = kernel_size,
             depth = depth,
             sinu_emb_dim = sinu_emb_dim,
-            Tmax = Tmax, 
             residual_layer = residual_layer, 
             activation=activation, 
             normalization=normalization,
@@ -435,12 +416,12 @@ class res_unet(nn.Module):
             norm_kwargs = norm_kwargs
         )
 
-    def forward(self,x,_t):
+    def forward(self,x,t_emb):
 
         x = self.input_layer(x)
-        x,res = self.encoder(x,_t)
-        x = self.bottle_neck(x,_t)
-        x = self.decoder(x,_t,res)
+        x,res = self.encoder(x,t_emb)
+        x = self.bottle_neck(x,t_emb)
+        x = self.decoder(x,t_emb,res)
         x = self.output_layer(x)
 
         return x
