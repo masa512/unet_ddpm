@@ -20,6 +20,9 @@ class forward_diffusion():
             "beta" : beta,
             "alpha_bar" : alpha_bar
         }
+        self.Tmax = Tmax
+        self.beta_min = beta_min
+        self.beta_max = beta_max
     
     def get_params(self,_t):
         """
@@ -29,6 +32,15 @@ class forward_diffusion():
             k : torch.index_select(v,-1,_t.squeeze()) for k, v in zip(self.params.keys(),self.params.values())
         }
         return params
+
+    def get_max_time(self):
+
+        return self.Tmax
+    
+    def get_beta_range(self):
+
+        return (self.beta_min,self.beta_max)
+
     
     def diffuse(self,x_0,_t):
 
@@ -42,7 +54,7 @@ class forward_diffusion():
         # Apply transformation as needed
         x_t = torch.sqrt(alpha_bar) * x_0 + torch.sqrt(1-alpha_bar) * noise
 
-        return x_t
+        return x_t,noise
 
         
 
