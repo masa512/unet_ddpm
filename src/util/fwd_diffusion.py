@@ -53,3 +53,23 @@ class forward_diffusion():
         x_t = torch.sqrt(alpha_bar) * x_0 + torch.sqrt(1-alpha_bar) * noise
 
         return x_t,noise
+
+    def reverse(self,x_t,_t,noise):
+
+        # Extract alpha, beta, alpha_bar for indices defined by _t
+        params = self.get_params(_t)
+        alpha = params['alpha'].view(-1,1,1,1)
+        beta = params['beta'].view(-1,1,1,1)
+        alpha_bar = params['alpha_bar'].view(-1,1,1,1)
+
+        # Extract the uncertainty term Zt
+        z_t = torch.randn_like(x_t)
+
+        # Update
+        x_t_prev = 1/torch.sqrt(alpha) * (x_t - (1-alpha)/torch.sqrt(1-alpha_bar) * noise) + torch.sqrt(beta) * z_t
+
+        return x_t_prev
+
+
+
+    
